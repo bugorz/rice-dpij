@@ -52,7 +52,24 @@ public class MatrixMult {
      */
     public static void parallelMatrixMultiply(Matrix a, Matrix b, Matrix c,
             final MPI mpi) throws MPIException {
-        for (int i = 0; i < c.getNRows(); i++) {
+
+
+        final MPI.MPI_Comm communicator = mpi.MPI_COMM_WORLD;
+        final int currentRank = mpi.MPI_Comm_rank(communicator);
+        final int totalRank = mpi.MPI_Comm_size(communicator);
+        final int totalRows = c.getNRows();
+
+        // define each workload
+        final int chunkRowSize = (totalRows + totalRank - 1) / totalRank;
+        final int startRow = currentRank * chunkRowSize;
+        int endRow = (currentRank + 1) * chunkRowSize;
+        if (endRow > totalRows) endRow = totalRows; // ensure we don't cross the boundary
+
+        // broadcast a and b to every ranks that are not rank 0
+        mpi.MPI_Bcast(a.getValues(), 0, a.getValues().length, 0, communicator);
+        mpi.MPI_Bcast(b.getValues(), 0, b.getValues().length, 0, communicator);
+
+        for (int i = startRow; i < endRow; i++) {
             for (int j = 0; j < c.getNCols(); j++) {
                 c.set(i, j, 0.0);
 
@@ -61,5 +78,24 @@ public class MatrixMult {
                 }
             }
         }
+
+        // Rank 0, reduce
+        if (currentRank == 0) {
+            MPI.MPI_Request[] requests = new MPI.MPI_Request[totalRank - 1];
+            for (int rank = 1; rank < totalRank; ++rank) {
+                int rankStartRow = rank * chunkRowSize;
+                int rankEndRow = (rank +1) * chunkRowSize;
+                if (rankEndRow > totalRows) rankEndRow = totalRows;
+
+                int rowOffset = rankStartRow * c.getNCols();
+                int length = (rankEndRow - rankStartRow) * c.getNCols();
+                requests[rank - 1] = mpi.MPI_Irecv(c.getValues(), rowOffset, length, rank, rank, communicator);
+            }
+            mpi.MPI_Waitall(requests);
+        } else { // Other ranks, map
+            mpi.MPI_Send(c.getValues(), startRow * c.getNCols(),
+                    (endRow - startRow) * c.getNCols(), 0, currentRank, communicator);
+        }
+
     }
 }
