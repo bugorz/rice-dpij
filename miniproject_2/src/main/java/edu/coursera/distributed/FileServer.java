@@ -1,12 +1,10 @@
 package edu.coursera.distributed;
 
+import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.File;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * A basic and very limited implementation of a file server that responds to GET
@@ -26,19 +24,20 @@ public final class FileServer {
      */
     public void run(final ServerSocket socket, final PCDPFilesystem fs)
             throws IOException {
+
+        Pattern p = Pattern.compile("(.+)GET\\s+([\\w/]+)\\s+HTTP/1.1");
+
         /*
          * Enter a spin loop for handling client requests to the provided
          * ServerSocket object.
          */
         while (true) {
 
-            // TODO Delete this once you start working on your solution.
-            throw new UnsupportedOperationException();
-
-            // TODO 1) Use socket.accept to get a Socket object
+            // 1) Use socket.accept to get a Socket object
+            Socket socketObject = socket.accept();
 
             /*
-             * TODO 2) Using Socket.getInputStream(), parse the received HTTP
+             * 2) Using Socket.getInputStream(), parse the received HTTP
              * packet. In particular, we are interested in confirming this
              * message is a GET and parsing out the path to the file we are
              * GETing. Recall that for GET HTTP packets, the first line of the
@@ -46,9 +45,18 @@ public final class FileServer {
              *
              *     GET /path/to/file HTTP/1.1
              */
+            InputStream inputStream = socketObject.getInputStream();
+            BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
+
+
+            final String inputLine = reader.readLine();
+
+            if (inputLine == null) continue;
+
+            final String path = inputLine.split("\\s")[1];
 
             /*
-             * TODO 3) Using the parsed path to the target file, construct an
+             * 3) Using the parsed path to the target file, construct an
              * HTTP reply and write it to Socket.getOutputStream(). If the file
              * exists, the HTTP reply should be formatted as follows:
              *
@@ -67,6 +75,21 @@ public final class FileServer {
              *
              * Don't forget to close the output stream.
              */
+
+            final OutputStream outputStream = socketObject.getOutputStream();
+            final PCDPPath pcdpPath = new PCDPPath(path);
+            final PrintStream printStream = new PrintStream(outputStream);
+
+            String fileOutput = fs.readFile(pcdpPath);
+            if (fileOutput != null) {
+                printStream.print("HTTP/1.0 200 OK\r\nServer: FileServer\r\n\r\n");
+                printStream.print(fileOutput + "\r\n");
+            } else {
+                printStream.print("HTTP/1.0 404 Not Found\r\nServer: FileServer\r\n\r\n");
+            }
+
+            printStream.flush();
+            printStream.close();
         }
     }
 }
