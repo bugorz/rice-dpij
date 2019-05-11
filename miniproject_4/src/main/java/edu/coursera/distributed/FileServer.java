@@ -1,12 +1,10 @@
 package edu.coursera.distributed;
 
+import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.File;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
 
 /**
  * A basic and very limited implementation of a file server that responds to GET
@@ -28,21 +26,24 @@ public final class FileServer {
      *                     implementation is not expected to ever throw
      *                     IOExceptions during normal operation.
      */
+
     public void run(final ServerSocket socket, final PCDPFilesystem fs,
             final int ncores) throws IOException {
+
+        ThreadPoolExecutor executor =
+                (ThreadPoolExecutor) Executors.newFixedThreadPool(ncores);
+
         /*
          * Enter a spin loop for handling client requests to the provided
          * ServerSocket object.
          */
         while (true) {
 
-            // TODO Delete this once you start working on your solution.
-            throw new UnsupportedOperationException();
-
-            // TODO 1) Use socket.accept to get a Socket object
+            // 1) Use socket.accept to get a Socket object
+            Socket socketObject = socket.accept();
 
             /*
-             * TODO 2) Now that we have a new Socket object, handle the parsing
+             * 2) Now that we have a new Socket object, handle the parsing
              * of the HTTP message on that socket and returning of the requested
              * file in a separate thread. You are free to choose how that new
              * thread is created. Common approaches would include spawning a new
@@ -77,6 +78,41 @@ public final class FileServer {
              * If you wish to do so, you are free to re-use code from
              * MiniProject 2 to help with completing this MiniProject.
              */
+
+            executor.submit(() -> {
+                PrintStream printStream = null;
+                try {
+                    final InputStream inputStream = socketObject.getInputStream();
+                    final BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
+
+                    final String inputLine = reader.readLine();
+
+                    if (inputLine == null) return;
+
+                    final String path = inputLine.split("\\s")[1];
+
+                    final OutputStream outputStream = socketObject.getOutputStream();
+                    final PCDPPath pcdpPath = new PCDPPath(path);
+                    printStream = new PrintStream(outputStream);
+
+                    final String fileOutput = fs.readFile(pcdpPath);
+                    if (fileOutput != null) {
+                        printStream.print("HTTP/1.0 200 OK\r\nServer: FileServer\r\n\r\n");
+                        printStream.print(fileOutput + "\r\n");
+                    } else {
+                        printStream.print("HTTP/1.0 404 Not Found\r\nServer: FileServer\r\n\r\n");
+                    }
+                } catch (IOException ioe) {
+                    if (printStream != null) {
+                        printStream.print("HTTP/1.0 500 Internal Server Error\r\nServer: FileServer\r\n\r\n");
+                    }
+                } finally {
+                    if (printStream != null) {
+                        printStream.flush();
+                        printStream.close();
+                    }
+                }
+            });
         }
     }
 }
